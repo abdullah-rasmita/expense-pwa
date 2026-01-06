@@ -1,5 +1,6 @@
 // Very small app-shell cache for offline opening
-const CACHE = "expense-pwa-v1";
+// Bump this when you deploy changes so existing installs pull the new UI.
+const CACHE = "expense-pwa-v2";
 const ASSETS = [
   "./",
   "./index.html",
