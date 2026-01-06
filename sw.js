@@ -1,50 +1,48 @@
-// sw.js
-const CACHE = "expense-pwa-v4";
-
+// Very small app-shell cache for offline opening
+const CACHE = "expense-pwa-v1";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
+  "./style.css",
+  "./manifest.webmanifest",
   "./config.js",
   "./src/app.js",
-  "./src/ui.js",
   "./src/db.js",
   "./src/util.js",
+  "./src/crypto.js",
   "./src/drive.js",
-  "./src/drive_sync.js",
-  "./src/merge.js"
+  "./src/export_import.js",
+  "./src/merge.js",
+  "./src/ui.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : null)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  const url = new URL(req.url);
-
-  if (url.origin !== self.location.origin) return;
-
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((resp) => {
-        if (req.method === "GET" && resp && resp.status === 200) {
-          const copy = resp.clone();
-          caches.open(CACHE).then((cache) => cache.put(req, copy));
-        }
-        return resp;
-      });
-    })
-  );
+  if (req.method !== "GET") return;
+  event.respondWith((async () => {
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    try {
+      const fresh = await fetch(req);
+      return fresh;
+    } catch {
+      // fallback to app shell
+      return caches.match("./");
+    }
+  })());
 });
