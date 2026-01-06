@@ -1,176 +1,215 @@
-// src/app.js
-import { ensureSeedData, db } from "./db.js";
-import { renderAll } from "./ui.js";
-import { runSync } from "./drive_sync.js";
+import { APP_NAME } from "../config.js";
+import { initDb, db } from "./db.js";
+import { exportAll, downloadJson, downloadCsvExpenses, importAll } from "./export_import.js";
+import { encryptJson, decryptJson } from "./crypto.js";
+import { initGoogleAuth, findBackupFile, downloadBackup, uploadNewBackup, updateBackup } from "./drive.js";
+import { mergeAndApply } from "./merge.js";
+import { renderAll, renderConflicts, refreshConflictBadge, toast } from "./ui.js";
 
-const $ = (id) => document.getElementById(id);
-
-function setStatus(msg) {
-  const el = $("statusLine");
-  if (el) el.textContent = msg || "";
+function setStatus(text){
+  document.getElementById("statusLine").textContent = text;
 }
 
-function showError(e) {
-  const msg = e?.message || String(e);
-  console.error(e);
-  setStatus("Error: " + msg);
-}
-
-window.addEventListener("error", (e) => showError(e.error || e));
-window.addEventListener("unhandledrejection", (e) => showError(e.reason || e));
-
-function normalizeLabel(s) {
-  return (s || "").trim().toLowerCase();
-}
-
-function setActiveTab(viewKey) {
-  const key = normalizeLabel(viewKey);
-
-  // Hide all views
-  const allViews = ["weekly", "monthly", "other", "summary", "settings"];
-  for (const v of allViews) {
-    const el = $(`view-${v}`);
-    if (el) el.style.display = (v === key ? "block" : "none");
-  }
-
-  // Visual active tab (best effort)
-  document.querySelectorAll("button, a").forEach((el) => {
-    const t = normalizeLabel(el.textContent);
-    if (["weekly", "monthly", "other", "summary", "settings"].includes(t)) {
-      el.classList.toggle("active", t === key);
-    }
-  });
-}
-
-async function exportJson() {
-  // Dump all tables to JSON and download
-  const payload = {
-    exported_at: new Date().toISOString(),
-    shopping_lists: await db.shopping_lists.toArray(),
-    shopping_items: await db.shopping_items.toArray(),
-    expenses: await db.expenses.toArray(),
-    categories: await db.categories.toArray(),
-    sync_meta: await db.sync_meta.toArray(),
+function showView(key){
+  const map = {
+    weekly: "view-weekly",
+    monthly: "view-monthly",
+    expenses: "view-expenses",
+    summary: "view-summary",
+    settings: "view-settings",
+    conflicts: "view-conflicts",
   };
+  for (const id of Object.values(map)){
+    document.getElementById(id).classList.add("hidden");
+  }
+  document.getElementById(map[key]).classList.remove("hidden");
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `expense-pwa-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  const tab = document.querySelector(`.tab[data-tab="${key}"]`);
+  if (tab) tab.classList.add("active");
 }
 
-async function importJsonFromFile(file) {
-  const text = await file.text();
-  const data = JSON.parse(text);
-
-  // Basic import: bulkPut everything (your merge/sync still handles conflicts separately)
-  // We keep this simple and predictable.
-  if (Array.isArray(data.shopping_lists)) await db.shopping_lists.bulkPut(data.shopping_lists);
-  if (Array.isArray(data.shopping_items)) await db.shopping_items.bulkPut(data.shopping_items);
-  if (Array.isArray(data.expenses)) await db.expenses.bulkPut(data.expenses);
-  if (Array.isArray(data.categories)) await db.categories.bulkPut(data.categories);
-  if (Array.isArray(data.sync_meta)) await db.sync_meta.bulkPut(data.sync_meta);
-
-  // Re-render
-  await renderAll();
-}
-
-function wireTopButtonsByText() {
-  const btns = Array.from(document.querySelectorAll("button"));
-
-  const findBtn = (label) => btns.find(b => normalizeLabel(b.textContent) === normalizeLabel(label));
-
-  const bSync = findBtn("Sync");
-  const bExport = findBtn("Export");
-  const bImport = findBtn("Import");
-
-  if (bSync) {
-    bSync.addEventListener("click", async () => {
-      setStatus("Syncing...");
-      try {
-        const result = await runSync({ onStatus: setStatus });
-        const conflicts = result?.conflicts_count ?? 0;
-        const cc = $("conflictsCount");
-        if (cc) cc.textContent = String(conflicts);
-        setStatus(`Sync done. Conflicts: ${conflicts}`);
-        await renderAll();
-      } catch (e) {
-        showError(e);
-      }
-    });
-  }
-
-  if (bExport) {
-    bExport.addEventListener("click", async () => {
-      try {
-        await exportJson();
-        setStatus("Exported.");
-      } catch (e) {
-        showError(e);
-      }
-    });
-  }
-
-  if (bImport) {
-    bImport.addEventListener("click", async () => {
-      try {
-        const inp = document.createElement("input");
-        inp.type = "file";
-        inp.accept = "application/json";
-        inp.onchange = async () => {
-          const f = inp.files?.[0];
-          if (!f) return;
-          setStatus("Importing...");
-          await importJsonFromFile(f);
-          setStatus("Imported.");
-        };
-        inp.click();
-      } catch (e) {
-        showError(e);
-      }
-    });
-  }
-}
-
-function wireTabsByText() {
-  const tabs = Array.from(document.querySelectorAll("button, a"))
-    .filter(el => ["weekly", "monthly", "other", "summary", "settings"].includes(normalizeLabel(el.textContent)));
-
-  tabs.forEach(el => {
-    el.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      const key = normalizeLabel(el.textContent);
-      setActiveTab(key);
-    });
+function bindTabs(){
+  document.querySelectorAll(".tab").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const k = btn.getAttribute("data-tab");
+      showView(k);
+      if (k === "conflicts") await renderConflicts();
+    };
   });
 }
 
-async function boot() {
-  setStatus("Starting...");
-  try {
-    await ensureSeedData();
-    await renderAll();
-
-    // Default view
-    setActiveTab("weekly");
-
-    // Wire UI controls
-    wireTopButtonsByText();
-    wireTabsByText();
-
-    setStatus("Ready");
-  } catch (e) {
-    showError(e);
+async function registerSW(){
+  if (!("serviceWorker" in navigator)) return;
+  try{
+    await navigator.serviceWorker.register("./sw.js", {scope:"./"});
+  }catch(e){
+    // Ignore; app still works online
   }
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot);
-} else {
-  boot();
+async function promptFile(accept=".json"){
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = accept;
+    inp.onchange = () => resolve(inp.files?.[0] || null);
+    inp.click();
+  });
 }
+
+async function readJsonFile(file){
+  const text = await file.text();
+  return JSON.parse(text);
+}
+
+async function doExport(){
+  const all = await exportAll();
+  downloadJson(`expense_backup_${Date.now()}.json`, all);
+  toast("Exported JSON");
+}
+
+async function doImport(){
+  const f = await promptFile(".json");
+  if (!f) return;
+  const obj = await readJsonFile(f);
+  await importAll(obj);
+  toast("Imported");
+  await renderAll();
+  await refreshConflictBadge();
+}
+
+async function doSync(){
+  // Manual sync:
+  // 1) Ask passphrase (remembered for this session)
+  // 2) Fetch remote encrypted backup (appDataFolder), decrypt
+  // 3) Export local, merge, apply
+  // 4) Export merged, encrypt, upload/update
+  if (!initGoogleAuth()){
+    toast("Google auth library not loaded yet. Try again.");
+    return;
+  }
+
+  const passphrase = await getSessionPassphrase();
+  if (!passphrase) return;
+
+  setStatus("Syncing…");
+  const localExport = await exportAll();
+
+  let remoteExport = null;
+  let remoteFile = null;
+  try{
+    remoteFile = await findBackupFile();
+    if (remoteFile){
+      const enc = await downloadBackup(remoteFile.id);
+      remoteExport = await decryptJson(enc, passphrase);
+    }
+  }catch(e){
+    setStatus("Sync failed");
+    toast(`Sync: remote read/decrypt failed: ${e.message}`);
+    return;
+  }
+
+  // If no remote yet, just upload local
+  if (!remoteExport){
+    try{
+      const enc = await encryptJson(localExport, passphrase);
+      await uploadNewBackup(enc);
+      setStatus("Sync complete");
+      const c = await refreshConflictBadge();
+      toast(`Sync complete. Conflicts: ${c} <a href="#" id="goConf">Review</a>`, {ms:0});
+      wireToastReview();
+      return;
+    }catch(e){
+      setStatus("Sync failed");
+      toast(`Sync upload failed: ${e.message}`);
+      return;
+    }
+  }
+
+  // Merge record-level and apply to local DB
+  let result;
+  try{
+    result = await mergeAndApply({localExport, remoteExport});
+  }catch(e){
+    setStatus("Sync failed");
+    toast(`Merge failed: ${e.message}`);
+    return;
+  }
+
+  // Upload merged export
+  try{
+    const mergedExport = await exportAll();
+    const enc = await encryptJson(mergedExport, passphrase);
+    if (remoteFile) await updateBackup(remoteFile.id, enc);
+    else await uploadNewBackup(enc);
+  }catch(e){
+    setStatus("Sync partial");
+    toast(`Merged locally, but upload failed: ${e.message}`);
+    return;
+  }
+
+  setStatus("Sync complete");
+  await renderAll();
+  const open = await refreshConflictBadge();
+  toast(`Sync complete. Conflicts: ${open} <a href="#" id="goConf">Review</a>`, {ms:0});
+  wireToastReview();
+}
+
+function wireToastReview(){
+  const a = document.getElementById("goConf");
+  if (a){
+    a.onclick = (ev)=>{
+      ev.preventDefault();
+      showView("conflicts");
+      renderConflicts();
+      document.getElementById("toast").classList.add("hidden");
+    };
+  }
+}
+
+// Session passphrase memory (not persisted)
+let sessionPass = null;
+async function getSessionPassphrase(){
+  if (sessionPass) return sessionPass;
+
+  const pass = prompt("Enter passphrase for Drive backup (remembered for this session):");
+  if (!pass) return null;
+  sessionPass = pass;
+  return sessionPass;
+}
+
+async function doExportWithCsv(){
+  const all = await exportAll();
+  downloadJson(`expense_backup_${Date.now()}.json`, all);
+  await downloadCsvExpenses(`expenses_${Date.now()}.csv`);
+  toast("Exported JSON + CSV");
+}
+
+function bindTopButtons(){
+  document.getElementById("btnExport").onclick = async ()=>{
+    const choice = confirm("Export JSON + CSV? (Cancel = JSON only)");
+    if (choice) await doExportWithCsv();
+    else await doExport();
+  };
+  document.getElementById("btnImport").onclick = doImport;
+  document.getElementById("btnSync").onclick = doSync;
+  document.getElementById("btnConflicts").onclick = async ()=>{
+    showView("conflicts");
+    await renderConflicts();
+  };
+}
+
+(async function main(){
+  document.title = APP_NAME;
+  await registerSW();
+  bindTabs();
+  bindTopButtons();
+  showView("weekly");
+
+  await initDb();
+  await renderAll();
+  await refreshConflictBadge();
+
+  setStatus("Ready");
+})();
