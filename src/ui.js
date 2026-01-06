@@ -300,7 +300,7 @@ export async function renderSummary(){
 
   container.innerHTML = viewHtmlShell(
     "Summary",
-    "Range filter + chart",
+    "Includes: Other expenses + Weekly/Monthly actual shopping",
     `
       <div class="panel2">
         <div class="h2">Filter</div>
@@ -313,7 +313,9 @@ export async function renderSummary(){
 
       <div class="panel2">
         <div class="h2">Chart</div>
-        <canvas id="sumChart" height="140"></canvas>
+        <div class="chartBox">
+          <canvas id="sumChart"></canvas>
+        </div>
       </div>
 
       <div class="panel2">
@@ -323,42 +325,102 @@ export async function renderSummary(){
     `
   );
 
+  // Keep one chart instance
+  if (!window.__sumChart) window.__sumChart = null;
+
+  async function collectSpending(s, e){
+    // 1) Other expenses (date-based)
+    const allExp = await db.expenses.toArray();
+    const exps = allExp
+      .filter(x => x.deleted_at == null)
+      .filter(x => x.date >= s && x.date <= e);
+
+    // 2) Shopping actuals (weekly/monthly lists)
+    const allLists = await db.shopping_lists.toArray();
+    const lists = allLists
+      .filter(l => l.deleted_at == null)
+      // include lists that overlap range (simple overlap check)
+      .filter(l => !(l.end_date < s || l.start_date > e));
+
+    const allItems = await db.shopping_items.toArray();
+    const items = allItems.filter(i => i.deleted_at == null);
+
+    // attribute each shopping-item actual to its list.start_date (a stable choice)
+    const shoppingEntries = [];
+    for (const l of lists){
+      const its = items.filter(i => i.list_id === l.id);
+      for (const it of its){
+        const a = (it.actual_price == null ? null : Number(it.actual_price));
+        if (a != null && !Number.isNaN(a) && a > 0){
+          shoppingEntries.push({ date: l.start_date, amount: a });
+        }
+      }
+    }
+
+    // Combine
+    const combined = [
+      ...exps.map(x => ({ date: x.date, amount: Number(x.amount || 0) })),
+      ...shoppingEntries
+    ];
+
+    return combined;
+  }
+
   async function compute(){
     const s = el("sumStart").value || startDefault;
     const e = el("sumEnd").value || endDefault;
 
-    const all = await db.expenses.toArray();
-    const exps = all.filter(x=>x.deleted_at==null)
-      .filter(x=>x.date>=s && x.date<=e)
-      .sort((a,b)=>a.date.localeCompare(b.date));
+    const entries = await collectSpending(s, e);
 
+    // Aggregate by date
     const byDay = new Map();
-    for (const x of exps){
-      byDay.set(x.date, (byDay.get(x.date)||0) + Number(x.amount||0));
+    for (const x of entries){
+      const d = x.date;
+      byDay.set(d, (byDay.get(d) || 0) + Number(x.amount || 0));
     }
-    const labels = Array.from(byDay.keys());
-    const values = labels.map(k=>byDay.get(k));
 
-    const ctx = el("sumChart").getContext("2d");
-    if (window.__sumChart){
-      window.__sumChart.destroy();
-      window.__sumChart = null;
-    }
-    window.__sumChart = new window.Chart(ctx, {
-      type: "line",
-      data: { labels, datasets: [{ label: "Expense", data: values }] },
-      options: { responsive:true, maintainAspectRatio:false }
-    });
+    const labels = Array.from(byDay.keys()).sort();
+    const values = labels.map(k => byDay.get(k));
 
     const total = values.reduce((a,b)=>a+b,0);
+
+    const canvas = el("sumChart");
+    const ctx = canvas.getContext("2d");
+
+    if (!window.Chart){
+      el("sumTotals").innerHTML = `Chart.js not loaded. Total: ${money(total)}`;
+      return;
+    }
+
+    // Create once, then update (prevents growth + flicker)
+    if (!window.__sumChart){
+      window.__sumChart = new window.Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{ label: "Spending", data: values }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+    } else {
+      window.__sumChart.data.labels = labels;
+      window.__sumChart.data.datasets[0].data = values;
+      window.__sumChart.update();
+    }
+
     el("sumTotals").innerHTML = `
       <div><span class="muted">Range:</span> ${escapeHtml(s)} → ${escapeHtml(e)}</div>
-      <div><span class="muted">Count:</span> ${exps.length}</div>
+      <div><span class="muted">Entries counted:</span> ${entries.length}</div>
       <div><span class="muted">Total:</span> ${money(total)}</div>
     `;
   }
 
-  el("sumRun")?.addEventListener("click", compute);
+  // IMPORTANT: avoid duplicate listeners across rerenders
+  el("sumRun").onclick = compute;
+
   await compute();
 }
 
