@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Expense PWA</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css" />
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div>
+        <div class="title">Expense PWA</div>
+        <div id="statusLine" class="subtitle">Local-first • Offline-ready</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnSync" class="btn">Sync</button>
+      <button id="btnExport" class="btn">Export</button>
+      <button id="btnImport" class="btn">Import</button>
+      <button id="btnConflicts" class="btn btn-warn">Conflicts <span id="conflictBadge" class="badge">0</span></button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="weekly">Weekly</button>
+    <button class="tab" data-tab="monthly">Monthly</button>
+    <button class="tab" data-tab="expenses">Other</button>
+    <button class="tab" data-tab="summary">Summary</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <main class="container">
+    <section id="view-weekly" class="view"></section>
+    <section id="view-monthly" class="view hidden"></section>
+    <section id="view-expenses" class="view hidden"></section>
+    <section id="view-summary" class="view hidden"></section>
+    <section id="view-settings" class="view hidden"></section>
+    <section id="view-conflicts" class="view hidden"></section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Chart.js (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
