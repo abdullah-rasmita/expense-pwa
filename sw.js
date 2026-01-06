@@ -1,49 +1,54 @@
-// Very small app-shell cache for offline opening
-// Bump this when you deploy changes so existing installs pull the new UI.
-const CACHE = "expense-pwa-v2";
+// sw.js
+const CACHE = "expense-pwa-v3";
+
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css",
-  "./manifest.webmanifest",
+  "./styles.css",
   "./config.js",
   "./src/app.js",
+  "./src/ui.js",
   "./src/db.js",
   "./src/util.js",
-  "./src/crypto.js",
   "./src/drive.js",
-  "./src/export_import.js",
-  "./src/merge.js",
-  "./src/ui.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./src/drive_sync.js",
+  "./src/merge.js"
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+  );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
-    self.clients.claim();
-  })());
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : null)))
+    )
+  );
+  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return;
-  event.respondWith((async () => {
-    const cached = await caches.match(req);
-    if (cached) return cached;
-    try {
-      const fresh = await fetch(req);
-      return fresh;
-    } catch {
-      // fallback to app shell
-      return caches.match("./");
-    }
-  })());
+  const url = new URL(req.url);
+
+  // Only handle same-origin
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req).then((resp) => {
+        // Cache new GET requests
+        if (req.method === "GET" && resp && resp.status === 200) {
+          const copy = resp.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy));
+        }
+        return resp;
+      });
+    })
+  );
 });
