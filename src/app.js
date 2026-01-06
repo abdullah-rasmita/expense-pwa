@@ -83,8 +83,8 @@ async function readJsonFile(file){
 
 async function doExport(){
   const all = await exportAll();
-  downloadJson(`expense_backup_${Date.now()}.json`, all);
-  toast("Exported JSON");
+  const ok = downloadJson(`expense_backup_${Date.now()}.json`, all);
+  toast(ok ? "Exported JSON" : "Export cancelled");
 }
 
 async function doImport(){
