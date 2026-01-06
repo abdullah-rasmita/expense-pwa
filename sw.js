@@ -1,7 +1,7 @@
 // sw.js
 // Offline cache with version bump.
 // IMPORTANT: change CACHE when you deploy new JS, otherwise old JS stays forever.
-const CACHE = "expense-pwa-v7";
+const CACHE = "expense-pwa-v8";
 
 const ASSETS = [
   "./",
