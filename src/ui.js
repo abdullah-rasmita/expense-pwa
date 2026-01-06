@@ -42,14 +42,19 @@ export async function renderWeekly(){
   const view = document.getElementById("view-weekly");
   const today = isoDate();
   const ws = startOfWeek(today), we = endOfWeek(today);
-  let list = await db.shopping_lists.where({period_type:"weekly", start_date: ws, end_date: we}).first();
+  // Avoid Dexie "where({..})" object queries (requires a compound index). Use indexed lookup + filter instead.
+  let list = await db.shopping_lists
+    .where("period_type")
+    .equals("weekly")
+    .filter(l => l.deleted_at == null && l.start_date === ws && l.end_date === we)
+    .first();
   if (!list){
     list = makeShoppingList({period_type:"weekly", start_date: ws, end_date: we, title: `Week ${ws}`});
     await db.shopping_lists.add(list);
   }
 
   const cats = await categories();
-  const items = await db.shopping_items.where({list_id: list.id}).toArray();
+  const items = await db.shopping_items.where("list_id").equals(list.id).toArray();
   const alive = items.filter(x=>x.deleted_at==null);
 
   const plannedTotal = alive.reduce((s,x)=>s+(x.planned_price||0)*(x.qty||1),0);
@@ -160,13 +165,17 @@ export async function renderMonthly(){
   const view = document.getElementById("view-monthly");
   const today = isoDate();
   const ms = startOfMonth(today), me = endOfMonth(today);
-  let list = await db.shopping_lists.where({period_type:"monthly", start_date: ms, end_date: me}).first();
+  let list = await db.shopping_lists
+    .where("period_type")
+    .equals("monthly")
+    .filter(l => l.deleted_at == null && l.start_date === ms && l.end_date === me)
+    .first();
   if (!list){
     list = makeShoppingList({period_type:"monthly", start_date: ms, end_date: me, title: `Month ${ms.slice(0,7)}`});
     await db.shopping_lists.add(list);
   }
   const cats = await categories();
-  const items = await db.shopping_items.where({list_id: list.id}).toArray();
+  const items = await db.shopping_items.where("list_id").equals(list.id).toArray();
   const alive = items.filter(x=>x.deleted_at==null);
 
   const plannedTotal = alive.reduce((s,x)=>s+(x.planned_price||0)*(x.qty||1),0);

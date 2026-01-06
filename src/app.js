@@ -1,13 +1,3 @@
-window.addEventListener("error", (e) => {
-  const el = document.getElementById("statusLine");
-  if (el) el.textContent = "Error: " + (e?.message || "unknown");
-  console.error(e);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  const el = document.getElementById("statusLine");
-  if (el) el.textContent = "Error: " + (e?.reason?.message || e?.reason || "promise");
-  console.error(e);
-});
 import { APP_NAME } from "../config.js";
 import { initDb, db } from "./db.js";
 import { exportAll, downloadJson, downloadCsvExpenses, importAll } from "./export_import.js";
