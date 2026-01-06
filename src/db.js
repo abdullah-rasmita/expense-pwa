@@ -23,7 +23,13 @@ export async function initDb(){
   if (!device){
     await db.meta.put({key:"device_id", value: uuid()});
   }
-  const cats = await db.categories.where("deleted_at").equals(null).count();
+
+  // IMPORTANT: don't do equals(null) on indexed keys (IndexedDB keys can't be null).
+  // Use toCollection().filter(...) instead.
+  const cats = await db.categories.toCollection()
+    .filter(c => c.deleted_at == null)
+    .count();
+
   if (cats === 0){
     const at = nowMs();
     const defaults = ["Groceries","Transport","Bills","Kids","Dining","Health","Other"].map(name=>({
@@ -40,33 +46,56 @@ export async function getDeviceId(){
 
 export function makeExpense({date, amount, category_id, note, source}){
   const at = nowMs();
-  return { id: uuid(), date, amount: Number(amount||0), category_id, note: note||"", source: source||"manual",
-           updated_at: at, deleted_at: null };
+  return {
+    id: uuid(),
+    date,
+    amount: Number(amount||0),
+    category_id,
+    note: note||"",
+    source: source||"manual",
+    updated_at: at,
+    deleted_at: null
+  };
 }
 
-export function makeShoppingList({period_type, start_date, end_date, title}){
+export function makeShoppingList({period_type, start_date, end_date, source}){
   const at = nowMs();
-  return { id: uuid(), period_type, start_date, end_date, title: title||"", updated_at: at, deleted_at: null };
+  return {
+    id: uuid(),
+    period_type,
+    start_date,
+    end_date,
+    source: source||"manual",
+    updated_at: at,
+    deleted_at: null
+  };
 }
 
-export function makeShoppingItem({list_id, name, qty, unit, planned_price, actual_price, checked, category_id}){
+export function makeShoppingItem({list_id, name, planned_price, actual_price, checked, source}){
   const at = nowMs();
-  return { id: uuid(), list_id, name: name||"", qty: Number(qty||1), unit: unit||"",
-           planned_price: planned_price===""? null : Number(planned_price||0),
-           actual_price: actual_price===""? null : Number(actual_price||0),
-           checked: !!checked,
-           category_id: category_id || null,
-           updated_at: at, deleted_at: null };
+  return {
+    id: uuid(),
+    list_id,
+    name: name||"",
+    planned_price: planned_price==="" ? null : (planned_price==null ? null : Number(planned_price)),
+    actual_price: actual_price==="" ? null : (actual_price==null ? null : Number(actual_price)),
+    checked: !!checked,
+    source: source||"manual",
+    updated_at: at,
+    deleted_at: null
+  };
 }
 
-export async function touch(table, id){
-  await db[table].update(id, {updated_at: nowMs()});
-}
-
-export async function softDelete(table, id){
-  await db[table].update(id, {deleted_at: nowMs(), updated_at: nowMs()});
-}
-
-export async function undelete(table, id){
-  await db[table].update(id, {deleted_at: null, updated_at: nowMs()});
+export function makeConflict({record_id, reason, local, remote}){
+  const at = nowMs();
+  return {
+    id: uuid(),
+    status: "open",
+    detected_at: at,
+    resolved_at: null,
+    record_id,
+    reason,
+    local,
+    remote
+  };
 }
