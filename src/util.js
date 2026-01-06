@@ -1,5 +1,15 @@
 export function nowMs(){ return Date.now(); }
 export function isoDate(d=new Date()){ return d.toISOString().slice(0,10); }
+
+// ---- Aliases expected by ui.js (ADD THESE) ----
+export function todayISO(){ return isoDate(new Date()); }
+export function weekStartISO(dateStr){ return startOfWeek(dateStr); }
+export function weekEndISO(dateStr){ return endOfWeek(dateStr); }
+export function monthStartISO(dateStr){ return startOfMonth(dateStr); }
+export function monthEndISO(dateStr){ return endOfMonth(dateStr); }
+export function fmtDate(dateStr){ return dateStr; }
+// ----------------------------------------------
+
 export function startOfWeek(dateStr){
   const d = new Date(dateStr+"T00:00:00");
   const day = d.getDay(); // 0 Sun
