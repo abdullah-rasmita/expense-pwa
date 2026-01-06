@@ -48,6 +48,22 @@
   <!-- Chart.js (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <script type="module" src="./src/app.js"></script>
+  <script type="module">
+  const statusEl = document.getElementById("statusLine");
+  const setStatus = (m) => { if (statusEl) statusEl.textContent = m; };
+
+  setStatus("Boot…");
+
+  // Cache-bust so you KNOW you're loading the latest file
+  import("./src/app.js?v=1")
+    .then(() => {
+      // If app.js runs, it will usually overwrite this later (e.g. "Ready")
+      setStatus("App loaded (waiting UI) …");
+    })
+    .catch((err) => {
+      console.error(err);
+      setStatus("Import error: " + (err?.message || String(err)));
+    });
+</script>
 </body>
 </html>
