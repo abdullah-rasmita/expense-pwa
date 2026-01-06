@@ -1,3 +1,5 @@
+console.log("✅ app.js loaded");
+document.addEventListener("DOMContentLoaded", () => console.log("✅ DOM ready"));
 window.addEventListener("error", (e) => {
   const el = document.getElementById("statusLine");
   if (el) el.textContent = "Error: " + (e?.message || "unknown");
