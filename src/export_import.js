@@ -11,12 +11,25 @@ export async function exportAll(){
 }
 
 export function downloadJson(filename, obj){
+  // Ask BEFORE we trigger the download (this is the only reliable "cancel")
+  const ok = confirm("Download export JSON now?");
+  if (!ok) return false;
+
   const blob = new Blob([JSON.stringify(obj, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = url;
   a.download = filename;
+
+  // Some browsers are picky unless the element is in the DOM
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+
+  // Revoke later (safer on mobile)
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return true;
 }
 
 export function csvFromExpenses(expenses, categoriesById){
