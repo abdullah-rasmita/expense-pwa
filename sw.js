@@ -1,5 +1,5 @@
 // sw.js
-const CACHE = "expense-pwa-v3";
+const CACHE = "expense-pwa-v4";
 
 const ASSETS = [
   "./",
@@ -16,9 +16,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
 
@@ -35,14 +33,12 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Only handle same-origin
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((resp) => {
-        // Cache new GET requests
         if (req.method === "GET" && resp && resp.status === 200) {
           const copy = resp.clone();
           caches.open(CACHE).then((cache) => cache.put(req, copy));
