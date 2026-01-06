@@ -13,6 +13,15 @@
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+/* Summary chart: prevent infinite growth */
+.chartBox {
+  height: 220px;
+}
+.chartBox canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 html,body{margin:0;background:var(--bg);color:var(--text);}
 a{color:var(--accent)}
 .topbar{
